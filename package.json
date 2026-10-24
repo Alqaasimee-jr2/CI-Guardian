@@ -1,0 +1,39 @@
+{
+  "name": "ci-guardian",
+  "version": "1.0.0",
+  "description": "Production pre-flight quality gate chaining AST security scanning, universal test orchestration, and PR documentation generation.",
+  "main": "src/index.js",
+  "bin": {
+    "ci-guardian": "bin/guardian.js",
+    "guardian": "bin/guardian.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test test/**/*.test.js",
+    "start": "node bin/guardian.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Alqaasimee-jr2/CI-Guardian.git"
+  },
+  "keywords": [
+    "ci",
+    "security",
+    "testing",
+    "pr-bot",
+    "ast",
+    "code-quality",
+    "pre-flight",
+    "github-actions"
+  ],
+  "author": "Alqaasimee-jr2",
+  "license": "MIT",
+  "dependencies": {
+    "@babel/parser": "^7.24.0"
+  }
+}

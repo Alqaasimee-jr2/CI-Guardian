@@ -1,0 +1,39 @@
+name: 'CI-Guardian Pre-Flight Quality Gate'
+description: 'Autonomous pre-flight quality gate chaining AST security scanning, test runner orchestration, and PR documentation generation.'
+author: 'Alqaasimee-jr2'
+branding:
+  icon: 'shield'
+  color: 'blue'
+
+inputs:
+  repo:
+    description: 'Path to target repository directory'
+    required: false
+    default: '.'
+  mode:
+    description: 'Scan mode: "diff" (changed files only) or "full" (whole repository)'
+    required: false
+    default: 'diff'
+  strict:
+    description: 'Fail CI step if vulnerabilities or test failures are detected'
+    required: false
+    default: 'true'
+  github_token:
+    description: 'GitHub token for posting automated PR comments'
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Run CI-Guardian
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+      run: |
+        npx --yes ci-guardian --repo "${{ inputs.repo }}" --${{ inputs.mode }} ${{ inputs.strict == 'true' && '--strict' || '' }}
