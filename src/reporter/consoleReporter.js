@@ -15,15 +15,27 @@ const c = {
   bgYellow: useColor ? '\x1b[43m\x1b[30m\x1b[1m' : ''
 };
 
-function determineVerdictState(scanRes, testRes) {
+function determineVerdictState(scanRes, testRes, strict = false) {
   const findings = scanRes.findings || [];
   const criticalCount = findings.filter(f => f.severity === 'CRITICAL').length;
   const highCount = findings.filter(f => f.severity === 'HIGH').length;
   const hasBlockers = (criticalCount + highCount) > 0;
   const skippedCount = (scanRes.skippedFiles || []).length;
 
-  // 1. Blocked: security findings or failing tests
-  if (hasBlockers || (testRes.configured && !testRes.passed && testRes.exitCode !== null && testRes.exitCode !== 127)) {
+  // 1. Could not run: test runner crashed or command missing
+  if (testRes.configured && !testRes.passed && (testRes.exitCode === 127 || testRes.timedOut || testRes.crashed)) {
+    return {
+      state: 'COULD_NOT_RUN',
+      badge: `${c.bgRed} 💥 EXECUTION HALTED - COULD NOT RUN ${c.reset}`,
+      scorecardLabel: '💥 EXECUTION HALTED - COULD NOT RUN',
+      headline: `>> PRE-FLIGHT VERDICT: [COULD NOT RUN] — Test runner execution failed.`,
+      subline: `>> Reason: ${testRes.reason || 'Process execution error'}`,
+      color: c.red
+    };
+  }
+
+  // 2. Blocked: security findings or failing tests
+  if (hasBlockers || (testRes.configured && !testRes.passed)) {
     return {
       state: 'BLOCKED',
       badge: `${c.bgRed} 🚨 ACTION REQUIRED - BLOCKED ${c.reset}`,
@@ -34,22 +46,10 @@ function determineVerdictState(scanRes, testRes) {
     };
   }
 
-  // 2. Could not run: test runner crashed or command missing
-  if (testRes.configured && (testRes.exitCode === 127 || testRes.timedOut || testRes.crashed)) {
-    return {
-      state: 'COULD_NOT_RUN',
-      badge: `${c.bgRed} 💥 EXECUTION HALTED - COULD NOT RUN ${c.reset}`,
-      scorecardLabel: '💥 EXECUTION HALTED - COULD NOT RUN',
-      headline: `>> PRE-FLIGHT VERDICT: [COULD NOT RUN] — Test runner crashed or command missing.`,
-      subline: `>> Reason: ${testRes.reason || 'Process execution error'}`,
-      color: c.red
-    };
-  }
-
-  // 3. Warning: no tests exist, or files were skipped (won't call this approved)
-  if (!testRes.configured || skippedCount > 0) {
+  // 3. Warning: Parse errors OR (strict mode active without configured tests)
+  if (skippedCount > 0 || (strict && !testRes.configured)) {
     const reasons = [];
-    if (!testRes.configured) reasons.push('no automated tests configured');
+    if (strict && !testRes.configured) reasons.push('strict mode requires automated test execution');
     if (skippedCount > 0) reasons.push(`${skippedCount} file(s) skipped due to parse errors`);
 
     return {
@@ -57,31 +57,34 @@ function determineVerdictState(scanRes, testRes) {
       badge: `${c.bgYellow} ⚠️ ATTENTION NEEDED - UNVERIFIED GAPS ${c.reset}`,
       scorecardLabel: '⚠️ ATTENTION NEEDED - UNVERIFIED GAPS',
       headline: `>> PRE-FLIGHT VERDICT: [WARNING] — Audit finished with unverified gaps (${reasons.join(', ')}).`,
-      subline: '>> CI-Guardian will not approve as clean without full parse and test verification.',
+      subline: '>> Resolve syntax warnings or configure test runner to achieve full pass.',
       color: c.yellow
     };
   }
 
-  // 4. Clean: only when genuinely checked and found nothing
+  // 4. Clean: Clean security scan and tests passed (or clean security on repos without test suites)
+  const isSecurityOnly = !testRes.configured || testRes.skipped;
+  const subline = isSecurityOnly
+    ? '>> Static security scan 100% clean. Ready for pull request merge.'
+    : '>> Zero security issues & tests passing! Ready for pull request merge.';
+
   return {
     state: 'CLEAN',
     badge: `${c.bgGreen} ✔ CLEAN - APPROVED FOR MERGE ${c.reset}`,
     scorecardLabel: '✔ CLEAN - APPROVED FOR MERGE',
-    headline: '>> PRE-FLIGHT VERDICT: [CLEAN] — Zero security issues & tests passing!',
-    subline: '>> Ready for pull request merge.',
-    color: c.green
+    headline: '>> PRE-FLIGHT VERDICT: [CLEAN] — Zero security issues detected!',
+    subline,
+    color: c.green,
+    isSecurityOnly
   };
 }
 
-function printScorecard(securityPct, testPct, verdict) {
+function printScorecard(securityPct, testRes, verdict) {
   const width = 64;
   const barLen = 16;
 
   const secFilled = Math.round((securityPct / 100) * barLen);
   const secBar = '█'.repeat(secFilled) + '░'.repeat(barLen - secFilled);
-
-  const testFilled = Math.round((testPct / 100) * barLen);
-  const testBar = '█'.repeat(testFilled) + '░'.repeat(barLen - testFilled);
 
   console.log(`\n${c.cyan}┌${'─'.repeat(width)}┐${c.reset}`);
   console.log(`${c.cyan}│${c.reset}  ${c.bold}PRE-FLIGHT READINESS SCORECARD${c.reset}${' '.repeat(width - 32)}${c.cyan}│${c.reset}`);
@@ -91,23 +94,33 @@ function printScorecard(securityPct, testPct, verdict) {
   const secLine = `  Security Health : [${secColor}${secBar}${c.reset}] ${secColor}${securityPct}%${c.reset}`;
   console.log(`${c.cyan}│${c.reset}${secLine}${' '.repeat(Math.max(0, width - 39))}${c.cyan}│${c.reset}`);
 
-  const testColor = testPct === 100 ? c.green : (testPct === 0 ? c.red : c.yellow);
-  const testLine = `  Test Pass Rate  : [${testColor}${testBar}${c.reset}] ${testColor}${testPct}%${c.reset}`;
-  console.log(`${c.cyan}│${c.reset}${testLine}${' '.repeat(Math.max(0, width - 39))}${c.cyan}│${c.reset}`);
+  let testLine = '';
+  if (!testRes.configured || testRes.skipped) {
+    const naBar = '─'.repeat(barLen);
+    testLine = `  Test Suite      : [${c.dim}${naBar}${c.reset}] ${c.dim}N/A (Optional)${c.reset}`;
+    console.log(`${c.cyan}│${c.reset}${testLine}${' '.repeat(Math.max(0, width - 42))}${c.cyan}│${c.reset}`);
+  } else {
+    const testPct = testRes.totalTests > 0 ? Math.round((testRes.passedTests / testRes.totalTests) * 100) : (testRes.passed ? 100 : 0);
+    const testFilled = Math.round((testPct / 100) * barLen);
+    const testBar = '█'.repeat(testFilled) + '░'.repeat(barLen - testFilled);
+    const testColor = testPct === 100 ? c.green : (testPct === 0 ? c.red : c.yellow);
+    testLine = `  Test Pass Rate  : [${testColor}${testBar}${c.reset}] ${testColor}${testPct}%${c.reset}`;
+    console.log(`${c.cyan}│${c.reset}${testLine}${' '.repeat(Math.max(0, width - 39))}${c.cyan}│${c.reset}`);
+  }
 
   console.log(`${c.cyan}├${'─'.repeat(width)}┤${c.reset}`);
   console.log(`${c.cyan}│${c.reset}  Verdict :  ${verdict.badge}${' '.repeat(Math.max(0, width - 42))}${c.cyan}│${c.reset}`);
   console.log(`${c.cyan}└${'─'.repeat(width)}┘${c.reset}\n`);
 }
 
-function renderConsoleReport(scanRes, testRes, targetDir, mode, artifacts) {
+function renderConsoleReport(scanRes, testRes, targetDir, mode, artifacts, strict = false) {
   const findings = scanRes.findings || [];
   const suppressed = scanRes.suppressedFindings || [];
   const skipped = scanRes.skippedFiles || [];
   const criticalCount = findings.filter(f => f.severity === 'CRITICAL').length;
   const highCount = findings.filter(f => f.severity === 'HIGH').length;
 
-  const verdict = determineVerdictState(scanRes, testRes);
+  const verdict = determineVerdictState(scanRes, testRes, strict);
 
   console.log(`\n${c.cyan}${c.bold}============================================================================${c.reset}`);
   console.log(`${c.cyan}${c.bold}  CI-GUARDIAN — PRE-FLIGHT SECURITY & QUALITY GATE 🛡️${c.reset}`);
@@ -166,8 +179,10 @@ function renderConsoleReport(scanRes, testRes, targetDir, mode, artifacts) {
 
   // PHASE 2: TARGET TESTS
   console.log(`\n${c.bold}[PHASE 2: TARGET TEST SUITE EXECUTION]${c.reset}`);
-  if (!testRes.configured) {
-    console.log(`Runner Status : ${c.yellow}NO TESTS CONFIGURED${c.reset}`);
+  if (testRes.skipped) {
+    console.log(`Runner Status : ${c.dim}SKIPPED (--security-only mode enabled)${c.reset}`);
+  } else if (!testRes.configured) {
+    console.log(`Runner Status : ${c.dim}NOT CONFIGURED (Optional)${c.reset}`);
     console.log(`Detail        : ${c.dim}${testRes.reason}${c.reset}`);
   } else {
     console.log(`Runner Status : ${testRes.passed ? `${c.green}${c.bold}PASSED (100% GREEN)${c.reset}` : `${c.red}${c.bold}FAILED${c.reset}`}`);
@@ -191,8 +206,7 @@ function renderConsoleReport(scanRes, testRes, targetDir, mode, artifacts) {
 
   // SCORECARD
   const secScore = findings.length === 0 ? 100 : Math.max(10, 100 - (criticalCount * 30 + highCount * 20));
-  const testScore = !testRes.configured ? 0 : (testRes.totalTests > 0 ? Math.round((testRes.passedTests / testRes.totalTests) * 100) : (testRes.passed ? 100 : 0));
-  printScorecard(secScore, testScore, verdict);
+  printScorecard(secScore, testRes, verdict);
 
   // FINAL VERDICT
   console.log(`${c.cyan}${c.bold}============================================================================${c.reset}`);

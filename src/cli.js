@@ -59,15 +59,31 @@ function runGuardian(argv = process.argv.slice(2)) {
   const scanResult = scanRepository(resolvedRepo, fileFilter);
 
   // 2. Universal Target Test Execution
-  console.log(`[2/3] Executing Target Test Runner in ${resolvedRepo}...`);
-  const testResult = runTargetTests(resolvedRepo);
+  let testResult;
+  if (config.skipTests) {
+    console.log(`[2/3] Skipping Target Test Runner (--security-only mode enabled)...`);
+    testResult = {
+      configured: false,
+      skipped: true,
+      passed: true,
+      reason: 'Skipped via --security-only / --skip-tests flag.',
+      durationMs: 0,
+      totalTests: 0,
+      passedTests: 0,
+      failedTests: 0,
+      output: 'Tests skipped by user preference.'
+    };
+  } else {
+    console.log(`[2/3] Executing Target Test Runner in ${resolvedRepo}...`);
+    testResult = runTargetTests(resolvedRepo, 60000, config.testScript);
+  }
 
   // 3. Reports & Artifacts
   console.log(`[3/3] Generating Pre-Flight Artifacts in ${outputDir}...`);
   const artifacts = writeReports(scanResult, testResult, resolvedRepo, effectiveMode, outputDir, generateHtml);
 
   // Render Visual Console Scorecard
-  renderConsoleReport(scanResult, testResult, resolvedRepo, effectiveMode, artifacts);
+  renderConsoleReport(scanResult, testResult, resolvedRepo, effectiveMode, artifacts, strict);
 
   // Post PR comment if running in CI with token
   if (artifacts.commentPath && fs.existsSync(artifacts.commentPath)) {

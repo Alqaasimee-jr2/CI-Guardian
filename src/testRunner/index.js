@@ -53,8 +53,8 @@ function parseTestMetrics(output, exitCode) {
   }
 }
 
-function runTargetTests(targetDir, timeoutMs = 60000) {
-  const runner = detectTestRunner(targetDir);
+function runTargetTests(targetDir, timeoutMs = 60000, customScript = null) {
+  const runner = detectTestRunner(targetDir, customScript);
 
   if (!runner.configured) {
     return {
@@ -75,8 +75,12 @@ function runTargetTests(targetDir, timeoutMs = 60000) {
   const testCwd = runner.workingDir || targetDir;
   const startTime = Date.now();
 
+  const scriptArgs = runner.scriptName && runner.scriptName !== 'test'
+    ? ['run', runner.scriptName]
+    : ['test'];
+
   try {
-    const result = spawnSync(npmCmd, ['test'], {
+    const result = spawnSync(npmCmd, scriptArgs, {
       cwd: testCwd,
       encoding: 'utf-8',
       timeout: timeoutMs,
@@ -86,7 +90,9 @@ function runTargetTests(targetDir, timeoutMs = 60000) {
 
     const durationMs = Date.now() - startTime;
     const output = ((result.stdout || '') + '\n' + (result.stderr || '')).trim();
-    const passed = result.status === 0;
+    const timedOut = Boolean(result.error && (result.error.code === 'ETIMEDOUT' || /ETIMEDOUT/i.test(result.error.message)));
+    const crashed = Boolean(result.error && !timedOut);
+    const passed = result.status === 0 && !result.error;
 
     const metrics = parseTestMetrics(output, result.status);
 
@@ -94,7 +100,10 @@ function runTargetTests(targetDir, timeoutMs = 60000) {
       configured: true,
       framework: runner.framework,
       passed,
-      exitCode: result.status,
+      exitCode: result.status !== null ? result.status : (timedOut ? 124 : 1),
+      timedOut,
+      crashed,
+      reason: timedOut ? `Execution timed out after ${timeoutMs}ms` : (crashed ? result.error.message : null),
       durationMs,
       totalTests: metrics.totalTests,
       passedTests: metrics.passedTests,

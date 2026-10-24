@@ -48,21 +48,25 @@ test('Verdict Engine: accurately distinguishes all 4 verdict states', (t) => {
   const blockedRes = determineVerdictState(blockedScan, { configured: true, passed: true });
   assert.strictEqual(blockedRes.state, 'BLOCKED');
 
-  // 2. WARNING (no tests configured)
+  // 2. CLEAN in standard mode for security-only repo without tests
   const warnScan = { findings: [], skippedFiles: [] };
-  const warnRes = determineVerdictState(warnScan, { configured: false });
-  assert.strictEqual(warnRes.state, 'WARNING');
+  const cleanSecRes = determineVerdictState(warnScan, { configured: false });
+  assert.strictEqual(cleanSecRes.state, 'CLEAN');
 
-  // 3. WARNING (files skipped due to parse error)
+  // 3. WARNING when strict mode is active and tests are missing
+  const strictWarnRes = determineVerdictState(warnScan, { configured: false }, true);
+  assert.strictEqual(strictWarnRes.state, 'WARNING');
+
+  // 4. WARNING when files are skipped due to parse error
   const warnSkipScan = { findings: [], skippedFiles: [{ file: 'foo.ts', reason: 'Parse error' }] };
   const warnSkipRes = determineVerdictState(warnSkipScan, { configured: true, passed: true });
   assert.strictEqual(warnSkipRes.state, 'WARNING');
 
-  // 4. COULD NOT RUN
+  // 5. COULD NOT RUN
   const crashRes = determineVerdictState(warnScan, { configured: true, passed: false, exitCode: 127 });
   assert.strictEqual(crashRes.state, 'COULD_NOT_RUN');
 
-  // 5. CLEAN (only when checked and found nothing)
+  // 6. CLEAN (both security clean and tests passed)
   const cleanRes = determineVerdictState(warnScan, { configured: true, passed: true, totalTests: 5, passedTests: 5 });
   assert.strictEqual(cleanRes.state, 'CLEAN');
 });

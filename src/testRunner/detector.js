@@ -30,7 +30,7 @@ function findTargetPackage(targetDir) {
         if (fs.existsSync(subPkg)) {
           try {
             const parsed = JSON.parse(fs.readFileSync(subPkg, 'utf-8'));
-            if (parsed.scripts && parsed.scripts.test) {
+            if (parsed.scripts && (parsed.scripts.test || parsed.scripts.lint || parsed.scripts.build)) {
               return { pkgPath: subPkg, workingDir: path.join(targetDir, entry.name) };
             }
           } catch {}
@@ -42,7 +42,7 @@ function findTargetPackage(targetDir) {
   return null;
 }
 
-function detectTestRunner(targetDir) {
+function detectTestRunner(targetDir, customScript = null) {
   const target = findTargetPackage(targetDir);
 
   if (!target) {
@@ -56,17 +56,18 @@ function detectTestRunner(targetDir) {
 
   try {
     const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
-    const testScript = pkg.scripts && pkg.scripts.test;
+    const scriptName = customScript || 'test';
+    const scriptCmd = pkg.scripts && pkg.scripts[scriptName];
 
-    if (!testScript) {
+    if (!scriptCmd) {
       return {
         configured: false,
-        reason: 'No "test" script defined in package.json.'
+        reason: `No "${scriptName}" script defined in package.json.`
       };
     }
 
     // Check for dummy npm default test script
-    if (testScript.includes('no test specified') && testScript.includes('exit 1')) {
+    if (scriptName === 'test' && scriptCmd.includes('no test specified') && scriptCmd.includes('exit 1')) {
       return {
         configured: false,
         reason: 'Default npm placeholder test script ("no test specified").'
@@ -74,16 +75,18 @@ function detectTestRunner(targetDir) {
     }
 
     let framework = 'npm-test';
-    if (/jest/i.test(testScript)) framework = 'jest';
-    else if (/vitest/i.test(testScript)) framework = 'vitest';
-    else if (/mocha/i.test(testScript)) framework = 'mocha';
-    else if (/node\s+--test/i.test(testScript)) framework = 'node-test';
+    if (/jest/i.test(scriptCmd)) framework = 'jest';
+    else if (/vitest/i.test(scriptCmd)) framework = 'vitest';
+    else if (/mocha/i.test(scriptCmd)) framework = 'mocha';
+    else if (/node\s+--test/i.test(scriptCmd)) framework = 'node-test';
+    else if (customScript) framework = `npm run ${customScript}`;
 
     return {
       configured: true,
       framework,
+      scriptName,
       command: 'npm',
-      args: ['test', '--', '--no-color'],
+      args: ['run', scriptName, '--', '--no-color'],
       workingDir
     };
   } catch (err) {

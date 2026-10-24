@@ -22,23 +22,24 @@ function determineVerdictSummary(scanRes, testRes) {
     };
   }
 
-  if (!testRes.configured || skippedCount > 0) {
-    const reasons = [];
-    if (!testRes.configured) reasons.push('no automated tests configured');
-    if (skippedCount > 0) reasons.push(`${skippedCount} file(s) skipped due to syntax errors`);
+  if (skippedCount > 0) {
     return {
       state: 'WARNING',
-      title: '⚠️ WARNING — Unverified Gaps',
+      title: '⚠️ WARNING — Parse Gaps Detected',
       badge: '![Status](https://img.shields.io/badge/CI--Guardian-WARNING-yellow)',
-      summary: `Audit finished with unverified gaps (${reasons.join(', ')}). Not marked approved.`
+      summary: `Audit finished with ${skippedCount} file(s) skipped due to syntax errors.`
     };
   }
 
+  const isSecurityOnly = !testRes.configured || testRes.skipped;
+
   return {
     state: 'CLEAN',
-    title: '✔ CLEAN — Approved for Merge',
+    title: isSecurityOnly ? '✔ CLEAN — Approved for Merge (Security Verified)' : '✔ CLEAN — Approved for Merge',
     badge: '![Status](https://img.shields.io/badge/CI--Guardian-CLEAN_PASSED-brightgreen)',
-    summary: 'Zero security findings detected and all test assertions passing.'
+    summary: isSecurityOnly
+      ? 'Zero security findings detected across all in-scope source files.'
+      : 'Zero security findings detected and all native test assertions passing.'
   };
 }
 

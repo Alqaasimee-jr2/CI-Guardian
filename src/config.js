@@ -6,25 +6,28 @@ function printUsage() {
 CI-Guardian 🛡️ — Production Pre-Flight Quality Gate
 
 Usage:
-  guardian [options]
-  ci-guardian [options]
+  guardian [options] [target-dir]
+  ci-guardian [options] [target-dir]
 
 Options:
-  -r, --repo <path>     Target repository directory to audit (default: ".")
-  -d, --diff            Audit only files changed/staged relative to base git branch (default in git repos)
-  -f, --full            Audit the entire repository regardless of git diff status
-  -o, --output <dir>    Directory for generated reports (default: "<target-repo>/.guardian")
-  -s, --strict, --ci    Strict CI mode: exit code 1 on any CRITICAL or HIGH finding, or failed tests
-  --serve               Launch live HTTP preview server for HTML dashboard report
-  --no-html             Disable HTML dashboard generation
-  --format <type>       Report format: "console", "json", "sarif", "all" (default: "all")
-  -v, --version         Show CI-Guardian version
-  -h, --help            Show this help manual
+  -r, --repo <path>         Target repository directory to audit (default: ".")
+  -d, --diff                Audit only files changed/staged relative to base git branch (default in git repos)
+  -f, --full                Audit the entire repository regardless of git diff status
+  -o, --output <dir>        Directory for generated reports (default: "<target-repo>/.guardian")
+  -s, --strict, --ci        Strict CI mode: exit code 1 on warnings or missing tests
+  --security-only, --no-tests, --skip-tests
+                            Skip test execution and run static AST security scan only
+  --test-script <name>      Custom package.json script to run instead of "test" (e.g. "lint", "build")
+  --serve                   Launch live HTTP preview server for HTML dashboard report
+  --no-html                 Disable HTML dashboard generation
+  --format <type>           Report format: "console", "json", "sarif", "all" (default: "all")
+  -v, --version             Show CI-Guardian version
+  -h, --help                Show this help manual
 
 Exit Codes:
-  0 = Clean run, zero blocking vulnerabilities, all tests passed.
+  0 = Clean run, zero blocking vulnerabilities.
   1 = Policy failure (blocking security vulnerabilities or test failures detected).
-  2 = Configuration error, invalid arguments, or non-existent target path.
+  2 = Configuration error, invalid arguments, or test runner crash.
 `);
 }
 
@@ -34,6 +37,8 @@ function parseCliArgs(argv = process.argv.slice(2)) {
     mode: 'auto', // 'auto', 'diff', or 'full'
     outputDir: null,
     strict: false,
+    skipTests: false,
+    testScript: null,
     generateHtml: true,
     serve: false,
     format: 'all',
@@ -70,6 +75,16 @@ function parseCliArgs(argv = process.argv.slice(2)) {
       options.outputDir = arg.split('=')[1];
     } else if (arg === '-s' || arg === '--strict' || arg === '--ci') {
       options.strict = true;
+    } else if (arg === '--security-only' || arg === '--no-tests' || arg === '--skip-tests') {
+      options.skipTests = true;
+    } else if (arg === '--test-script' || arg === '--script') {
+      if (argv[i + 1] && !argv[i + 1].startsWith('-')) {
+        options.testScript = argv[++i];
+      } else {
+        throw new Error('Option --test-script requires a script name (e.g. "lint", "build").');
+      }
+    } else if (arg.startsWith('--test-script=')) {
+      options.testScript = arg.split('=')[1];
     } else if (arg === '--serve') {
       options.serve = true;
     } else if (arg === '--no-html') {
@@ -114,7 +129,7 @@ function resolveConfig(rawOptions) {
 }
 
 module.exports = {
+  printUsage,
   parseCliArgs,
-  resolveConfig,
-  printUsage
+  resolveConfig
 };
