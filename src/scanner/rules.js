@@ -1,6 +1,53 @@
 // AST-based Security Rules for CI-Guardian
 
-const SQL_KEYWORDS = /\b(SELECT|INSERT\s+INTO|UPDATE|DELETE\s+FROM|FROM|WHERE|JOIN|UNION)\b/i;
+// Distinct SQL statement patterns that represent genuine SQL query construction
+// rather than ordinary English sentences or CSS classes (e.g. "select-none", "away from campus")
+const SQL_PATTERNS = [
+  // 1. SELECT ... FROM ... (rejects English articles like "select a/an/the/your...")
+  /(?<![\w-])SELECT\s+(?!\s*(?:an?|the|your|our|my|one|all|any|some|this|that|these|those)\b)[\s\S]+?\bFROM\s+[`"'\w.]+/i,
+
+  // 2. INSERT INTO <table> ...
+  /(?<![\w-])INSERT\s+INTO\s+[`"'\w.]+/i,
+
+  // 3. UPDATE <table> SET <col> = ...
+  /(?<![\w-])UPDATE\s+[`"'\w.]+\s+SET\b/i,
+
+  // 4. DELETE FROM <table> ...
+  /(?<![\w-])DELETE\s+FROM\s+[`"'\w.]+/i,
+
+  // 5. DROP / TRUNCATE / ALTER TABLE ...
+  /(?<![\w-])(?:DROP|TRUNCATE|ALTER)\s+TABLE\s+[`"'\w.]+/i,
+
+  // 6. UNION [ALL] SELECT ...
+  /(?<![\w-])UNION\s+(?:ALL\s+)?SELECT\b/i,
+
+  // 7. WHERE clause fragment with column comparison: WHERE col = / > / < / LIKE / IN
+  /(?<![\w-])WHERE\s+[`"'\w.]+\s*(?:=|!=|<>|<=|>=|<|>|\bLIKE\b|\bILIKE\b|\bIN\b\s*\(|\bIS\b\s+(?:NOT\s+)?NULL|\bBETWEEN\b)/i,
+
+  // 8. JOIN <table> ON fragment
+  /(?<![\w-])(?:INNER\s+|LEFT\s+|RIGHT\s+|FULL\s+|CROSS\s+)?JOIN\s+[`"'\w.]+\s+ON\b/i
+];
+
+function isHtmlOrMarkup(str) {
+  if (typeof str !== 'string') return false;
+  // If string contains HTML tags or class attributes (e.g. Leaflet icons, SVG, JSX-like strings)
+  return /<\/?(?:div|span|p|a|button|table|tr|td|th|tbody|thead|ul|ol|li|h[1-6]|form|input|select|textarea|svg|path|circle|rect|img|header|footer|nav|section|article)\b/i.test(str)
+    || /<[a-z][\w-]*(\s+[^>]*)?>/i.test(str)
+    || /\bclass(?:Name)?=["'][^"']*["']/i.test(str);
+}
+
+function isJsxContext(parent) {
+  if (!parent) return false;
+  // If directly inside JSX attribute, only consider SQL if attribute is specifically named query/sql
+  if (parent.type === 'JSXAttribute') {
+    const attrName = parent.name && parent.name.name;
+    return attrName !== 'sql' && attrName !== 'query';
+  }
+  if (parent.type === 'JSXExpressionContainer' || parent.type === 'JSXElement') {
+    return true;
+  }
+  return false;
+}
 
 const SECRET_PATTERNS = [
   { id: 'STRIPE_SECRET_KEY', regex: /\bsk_live_[0-9a-zA-Z]{20,}\b/, name: 'Live Stripe Secret Key' },
@@ -15,7 +62,8 @@ const CREDENTIAL_IDENTIFIERS = /^(jwtSecret|apiKey|apiSecret|api_key|secretKey|p
 
 function isSqlString(str) {
   if (typeof str !== 'string') return false;
-  return SQL_KEYWORDS.test(str);
+  if (isHtmlOrMarkup(str)) return false;
+  return SQL_PATTERNS.some(pattern => pattern.test(str));
 }
 
 function getLineSnippet(code, lineNumber) {
@@ -86,6 +134,8 @@ function checkHardcodedSecret(node, parent, code, relPath) {
 }
 
 function checkSqlInjection(node, parent, code, relPath) {
+  if (isJsxContext(parent)) return null;
+
   // Check BinaryExpression concatenation: "SELECT ... " + userInput
   if (node.type === 'BinaryExpression' && node.operator === '+') {
     let hasSql = false;
@@ -224,5 +274,6 @@ function checkUnsafeDynamicExecution(node, parent, code, relPath) {
 module.exports = {
   checkHardcodedSecret,
   checkSqlInjection,
-  checkUnsafeDynamicExecution
+  checkUnsafeDynamicExecution,
+  isSqlString
 };

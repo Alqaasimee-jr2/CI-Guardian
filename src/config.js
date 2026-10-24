@@ -80,6 +80,8 @@ function parseCliArgs(argv = process.argv.slice(2)) {
       }
     } else if (arg.startsWith('--format=')) {
       options.format = arg.split('=')[1].toLowerCase();
+    } else if (!arg.startsWith('-') && options.repoPath === '.') {
+      options.repoPath = arg;
     } else {
       throw new Error(`Unknown option: ${arg}. Run "guardian --help" for usage.`);
     }

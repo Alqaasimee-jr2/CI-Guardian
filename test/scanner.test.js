@@ -57,6 +57,54 @@ test('AST Scanner: detects multiline template literal SQL injection', (t) => {
   assert.strictEqual(findings[0].severity, 'HIGH');
 });
 
+test('AST Scanner: does NOT flag Tailwind select-none or CSS classes as SQL injection', (t) => {
+  const content = 'const btn = <div className={`pointer-events-none select-none transition-transform ${isExpanded ? "open" : ""}`} />;\n';
+  const fixture = createTempFixture(content);
+  t.after(fixture.cleanup);
+
+  const findings = scanFile(fixture.filePath, fixture.tmpDir);
+  assert.strictEqual(findings.length, 0, 'Expected 0 findings for select-none in className template');
+});
+
+test('AST Scanner: does NOT flag HTML string templates with select-none as SQL injection', (t) => {
+  const content = 'const html = `<div class="pin-wrapper select-none" style="top: ${pos}px;"><span>Icon</span></div>`;\n';
+  const fixture = createTempFixture(content);
+  t.after(fixture.cleanup);
+
+  const findings = scanFile(fixture.filePath, fixture.tmpDir);
+  assert.strictEqual(findings.length, 0, 'Expected 0 findings for HTML string template');
+});
+
+test('AST Scanner: does NOT flag English sentences containing "from" or "select"', (t) => {
+  const content = 'const msg = `You are ~${distKm} km away from campus (${lat}, ${lng}). Map remains centered.`;\n';
+  const fixture = createTempFixture(content);
+  t.after(fixture.cleanup);
+
+  const findings = scanFile(fixture.filePath, fixture.tmpDir);
+  assert.strictEqual(findings.length, 0, 'Expected 0 findings for English sentence with "from"');
+});
+
+test('AST Scanner: detects UPDATE and DELETE SQL injections', (t) => {
+  const content = 'const q1 = `UPDATE users SET role = "${role}" WHERE id = ${id}`;\nconst q2 = `DELETE FROM accounts WHERE id = ${id}`;\n';
+  const fixture = createTempFixture(content);
+  t.after(fixture.cleanup);
+
+  const findings = scanFile(fixture.filePath, fixture.tmpDir);
+  assert.strictEqual(findings.length, 2);
+  assert.strictEqual(findings[0].ruleId, 'SQL_INJECTION');
+  assert.strictEqual(findings[1].ruleId, 'SQL_INJECTION');
+});
+
+test('AST Scanner: detects dynamic SQL injection via string concatenation', (t) => {
+  const content = 'const q = "SELECT id, name FROM users WHERE id = " + userId;\n';
+  const fixture = createTempFixture(content);
+  t.after(fixture.cleanup);
+
+  const findings = scanFile(fixture.filePath, fixture.tmpDir);
+  assert.strictEqual(findings.length, 1);
+  assert.strictEqual(findings[0].ruleId, 'SQL_INJECTION');
+});
+
 test('AST Scanner: detects dangerous dynamic eval execution', (t) => {
   const fixture = createTempFixture('function run(formula) {\n  return eval(formula);\n}\n');
   t.after(fixture.cleanup);

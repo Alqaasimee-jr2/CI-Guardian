@@ -37,6 +37,25 @@ test('Test Runner Detector: flags default npm dummy test script as unconfigured'
   assert.strictEqual(res.configured, false);
 });
 
+test('Test Runner Detector: detects package.json in project subdirectory', (t) => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ci-guardian-subproject-'));
+  t.after(() => {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+  });
+
+  const subDir = path.join(tmpDir, 'oaumods');
+  fs.mkdirSync(subDir, { recursive: true });
+  fs.writeFileSync(path.join(subDir, 'package.json'), JSON.stringify({
+    name: 'sub-app',
+    scripts: { test: 'vitest run' }
+  }));
+
+  const res = detectTestRunner(tmpDir);
+  assert.strictEqual(res.configured, true);
+  assert.strictEqual(res.framework, 'vitest');
+  assert.strictEqual(res.workingDir, subDir);
+});
+
 test('Test Runner Metrics: parses Jest output metrics', (t) => {
   const output = `
 PASS src/math.test.js

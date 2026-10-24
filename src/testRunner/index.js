@@ -72,11 +72,12 @@ function runTargetTests(targetDir, timeoutMs = 60000) {
 
   const isWindows = process.platform === 'win32';
   const npmCmd = isWindows ? 'npm.cmd' : 'npm';
+  const testCwd = runner.workingDir || targetDir;
   const startTime = Date.now();
 
   try {
     const result = spawnSync(npmCmd, ['test'], {
-      cwd: targetDir,
+      cwd: testCwd,
       encoding: 'utf-8',
       timeout: timeoutMs,
       shell: isWindows,
