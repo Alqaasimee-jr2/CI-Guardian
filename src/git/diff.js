@@ -40,15 +40,25 @@ function getChangedFiles(targetDir, baseBranch = 'origin/main') {
       }
     }
 
-    // 2. Diff against base branch if available
-    const diffRes = spawnSync('git', ['diff', '--name-only', baseBranch], {
-      cwd: targetDir,
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'ignore']
-    });
+    // 2. Diff against base branch with automatic fallback candidates
+    const candidates = [baseBranch, 'origin/master', 'main', 'master', 'HEAD~1'];
+    let diffStdout = null;
 
-    if (diffRes.status === 0 && diffRes.stdout) {
-      const lines = diffRes.stdout.split(/\r?\n/);
+    for (const candidate of candidates) {
+      const diffRes = spawnSync('git', ['diff', '--name-only', candidate], {
+        cwd: targetDir,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'ignore']
+      });
+
+      if (diffRes.status === 0 && diffRes.stdout) {
+        diffStdout = diffRes.stdout;
+        break;
+      }
+    }
+
+    if (diffStdout) {
+      const lines = diffStdout.split(/\r?\n/);
       for (const line of lines) {
         if (line.trim()) changedFiles.add(line.trim().replace(/^"|"$/g, ''));
       }

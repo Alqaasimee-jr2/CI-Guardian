@@ -114,3 +114,28 @@ test('AST Scanner: detects dangerous dynamic eval execution', (t) => {
   assert.strictEqual(findings[0].ruleId, 'UNSAFE_EVAL_EXEC');
   assert.strictEqual(findings[0].severity, 'CRITICAL');
 });
+
+test('AST Scanner: respects // guardian-disable-next-line suppression', (t) => {
+  const content = `
+    // guardian-disable-next-line SQL_INJECTION
+    const q = \`SELECT * FROM users WHERE id = \${userId}\`;
+  `;
+  const fixture = createTempFixture(content);
+  t.after(fixture.cleanup);
+
+  const findings = scanFile(fixture.filePath, fixture.tmpDir);
+  assert.strictEqual(findings.length, 0, 'Suppressed finding must not appear in active findings');
+  assert.strictEqual(findings.suppressed.length, 1, 'Suppressed finding must be recorded in suppressed list');
+  assert.strictEqual(findings.suppressed[0].ruleId, 'SQL_INJECTION');
+});
+
+test('AST Scanner: records skipped file on invalid syntax error instead of silent drop', (t) => {
+  const content = 'const foo = { unclosed_bracket: ';
+  const fixture = createTempFixture(content);
+  t.after(fixture.cleanup);
+
+  const findings = scanFile(fixture.filePath, fixture.tmpDir);
+  assert.strictEqual(findings.length, 0);
+  assert.ok(findings.skipped, 'Skipped error object must be captured');
+  assert.match(findings.skipped.reason, /Unexpected token/i);
+});

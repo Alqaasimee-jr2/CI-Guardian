@@ -95,11 +95,15 @@ function runGuardian(argv = process.argv.slice(2)) {
     return;
   }
 
-  // Determine exit code
-  const hasBlockers = (scanResult.findings || []).some(f => f.severity === 'CRITICAL' || f.severity === 'HIGH');
-  const isClean = !hasBlockers && testResult.passed;
+  // Determine verdict & exit code
+  const { determineVerdictState } = require('./reporter/consoleReporter');
+  const verdict = determineVerdictState(scanResult, testResult);
 
-  if (!isClean) {
+  if (verdict.state === 'BLOCKED') {
+    process.exit(1);
+  } else if (verdict.state === 'COULD_NOT_RUN') {
+    process.exit(2);
+  } else if (verdict.state === 'WARNING' && strict) {
     process.exit(1);
   }
 

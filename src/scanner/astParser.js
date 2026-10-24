@@ -22,15 +22,15 @@ function parseSource(code, filename = 'source.js') {
   if (isJsx) plugins.push('jsx');
 
   try {
-    return parser.parse(code, {
+    const ast = parser.parse(code, {
       sourceType: 'unambiguous',
       allowReturnOutsideFunction: true,
       allowAwaitOutsideFunction: true,
       plugins
     });
+    return { ast, error: null };
   } catch (err) {
-    // Return null if syntax cannot be parsed
-    return null;
+    return { ast: null, error: err };
   }
 }
 
